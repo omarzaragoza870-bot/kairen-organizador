@@ -111,6 +111,7 @@
     <button class="tab" data-tab="heic">Convertir imagenes</button>
     <button class="tab" data-tab="comprimir">Comprimir</button>
     <button class="tab" data-tab="unirpdf">Unir PDFs</button>
+    <button class="tab" data-tab="aplanar">Aplanar PDF</button>
   </div>
 
   <!-- RENOMBRAR -->
@@ -312,6 +313,26 @@
         <span class="status" id="u-status"></span>
       </div>
       <p class="foot">La union pasa por tu navegador; los archivos no se suben a ningun servidor.</p>
+    </div>
+  </div>
+
+  <!-- APLANAR PDF -->
+  <div class="panel" id="panel-aplanar">
+    <div class="card">
+      <div class="drop" id="drop-aplanar">
+        <div><strong>Arrastra tus PDFs con formulario aqui</strong></div>
+        <div>o haz click para seleccionarlos</div>
+      </div>
+      <input type="file" id="file-aplanar" multiple accept="application/pdf,.pdf">
+
+      <div class="list" id="ap-list"><div class="empty">Todavia no hay PDFs cargados.</div></div>
+
+      <div style="margin-top:14px;display:flex;gap:10px;align-items:center;">
+        <button class="btn primary" id="ap-aplanar" disabled>Aplanar y descargar</button>
+        <button class="btn" id="ap-limpiar">Limpiar</button>
+        <span class="status" id="ap-status"></span>
+      </div>
+      <p class="foot">Convierte los campos de formulario (texto, casillas) en contenido fijo, para que no se pierdan datos al imprimir o reabrir el PDF en otro programa. Si el PDF no tiene un formulario reconocible, se descarga igual sin cambios.</p>
     </div>
   </div>
 
@@ -933,6 +954,79 @@ document.getElementById('u-unir').addEventListener('click', async ()=>{
   }catch(err){
     status.textContent = 'Error al unir: ' + ((err && err.message) ? err.message : String(err));
   }
+});
+
+/* ---------- APLANAR PDF ---------- */
+let aplanarFiles = [];
+
+function renderAplanar(){
+  const list = document.getElementById('ap-list');
+  const btn = document.getElementById('ap-aplanar');
+  if(aplanarFiles.length===0){
+    list.innerHTML = '<div class="empty">Todavia no hay PDFs cargados.</div>';
+    btn.disabled = true;
+    return;
+  }
+  let html='';
+  aplanarFiles.forEach(f=>{
+    html += `<div class="item"><span class="old">${f.name}</span></div>`;
+  });
+  list.innerHTML = html;
+  btn.disabled = false;
+}
+
+setupDrop('drop-aplanar','file-aplanar', files=>{
+  aplanarFiles = files.filter(f=> f.type==='application/pdf' || /\.pdf$/i.test(f.name));
+  renderAplanar();
+});
+
+document.getElementById('ap-limpiar').addEventListener('click', ()=>{
+  aplanarFiles = [];
+  document.getElementById('file-aplanar').value = '';
+  document.getElementById('ap-status').textContent = '';
+  renderAplanar();
+});
+
+document.getElementById('ap-aplanar').addEventListener('click', async ()=>{
+  const status = document.getElementById('ap-status');
+  const { PDFDocument } = PDFLib;
+  const items = [];
+  const fallidos = [];
+  let sinFormulario = 0;
+
+  for(let i=0;i<aplanarFiles.length;i++){
+    const f = aplanarFiles[i];
+    status.textContent = `Aplanando ${i+1} de ${aplanarFiles.length}: ${f.name}...`;
+    try{
+      const bytes = await f.arrayBuffer();
+      const pdfDoc = await PDFDocument.load(bytes);
+      try{
+        const form = pdfDoc.getForm();
+        const campos = form.getFields();
+        if(campos.length > 0){
+          form.flatten();
+        } else {
+          sinFormulario++;
+        }
+      }catch(errForm){
+        sinFormulario++;
+      }
+      const nuevoBytes = await pdfDoc.save();
+      const blob = new Blob([nuevoBytes], {type:'application/pdf'});
+      const nombreNuevo = f.name.replace(/\.pdf$/i, '') + '_aplanado.pdf';
+      items.push({ blob, nombre: nombreNuevo });
+    }catch(err){
+      fallidos.push({ nombre: f.name, error: (err && err.message) ? err.message : String(err) });
+    }
+  }
+
+  status.textContent = items.length>1 ? `Empaquetando ${items.length} archivos...` : 'Descargando...';
+  await descargarLote(items, 'aplanados.zip', status);
+
+  let mensaje = `Listo, ${items.length} archivo(s) procesado(s).`;
+  if(sinFormulario>0) mensaje += ` (${sinFormulario} no tenian campos de formulario, se descargaron sin cambios).`;
+  if(fallidos.length>0) mensaje += ` Fallaron ${fallidos.length}: ` + fallidos.map(x=>x.nombre).join(', ');
+  status.textContent = mensaje;
 });
 </script>
 </body>
