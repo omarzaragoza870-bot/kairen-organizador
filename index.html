@@ -112,6 +112,7 @@
     <button class="tab" data-tab="comprimir">Comprimir</button>
     <button class="tab" data-tab="unirpdf">Unir PDFs</button>
     <button class="tab" data-tab="aplanar">Aplanar PDF</button>
+    <button class="tab" data-tab="separar">Separar PDF</button>
   </div>
 
   <!-- RENOMBRAR -->
@@ -333,6 +334,45 @@
         <span class="status" id="ap-status"></span>
       </div>
       <p class="foot">Convierte los campos de formulario (texto, casillas) en contenido fijo, para que no se pierdan datos al imprimir o reabrir el PDF en otro programa. Si el PDF no tiene un formulario reconocible, se descarga igual sin cambios.</p>
+    </div>
+  </div>
+
+  <!-- SEPARAR PDF -->
+  <div class="panel" id="panel-separar">
+    <div class="card">
+      <div class="drop" id="drop-separar">
+        <div><strong>Arrastra el PDF a separar aqui</strong></div>
+        <div>o haz click para seleccionarlo</div>
+      </div>
+      <input type="file" id="file-separar" accept="application/pdf,.pdf">
+
+      <div class="row">
+        <div class="field">
+          <label>Prefijo de salida</label>
+          <input type="text" id="s-prefijo" value="parte_">
+        </div>
+        <div class="field">
+          <label>Paginas por PDF</label>
+          <input type="number" id="s-porgrupo" value="8" min="1">
+        </div>
+        <div class="field">
+          <label>Inicia en</label>
+          <input type="number" id="s-inicio" value="1" min="0">
+        </div>
+        <div class="field">
+          <label>Digitos</label>
+          <input type="number" id="s-digitos" value="2" min="1" max="6">
+        </div>
+      </div>
+
+      <div class="list" id="s-list"><div class="empty">Todavia no hay PDF cargado.</div></div>
+
+      <div style="margin-top:14px;display:flex;gap:10px;align-items:center;">
+        <button class="btn primary" id="s-separar" disabled>Separar y descargar</button>
+        <button class="btn" id="s-limpiar">Limpiar</button>
+        <span class="status" id="s-status"></span>
+      </div>
+      <p class="foot">Divide un PDF grande en varios PDFs mas pequenos, cada uno con el numero de paginas que definas.</p>
     </div>
   </div>
 
@@ -1027,6 +1067,76 @@ document.getElementById('ap-aplanar').addEventListener('click', async ()=>{
   if(sinFormulario>0) mensaje += ` (${sinFormulario} no tenian campos de formulario, se descargaron sin cambios).`;
   if(fallidos.length>0) mensaje += ` Fallaron ${fallidos.length}: ` + fallidos.map(x=>x.nombre).join(', ');
   status.textContent = mensaje;
+});
+
+/* ---------- SEPARAR PDF ---------- */
+let separarFile = null;
+
+function renderSeparar(){
+  const list = document.getElementById('s-list');
+  const btn = document.getElementById('s-separar');
+  if(!separarFile){
+    list.innerHTML = '<div class="empty">Todavia no hay PDF cargado.</div>';
+    btn.disabled = true;
+    return;
+  }
+  list.innerHTML = `<div class="item"><span class="old">${separarFile.name}</span></div>`;
+  btn.disabled = false;
+}
+
+setupDrop('drop-separar','file-separar', files=>{
+  const pdfs = files.filter(f=> f.type==='application/pdf' || /\.pdf$/i.test(f.name));
+  separarFile = pdfs.length>0 ? pdfs[0] : null;
+  renderSeparar();
+});
+
+document.getElementById('s-limpiar').addEventListener('click', ()=>{
+  separarFile = null;
+  document.getElementById('file-separar').value = '';
+  document.getElementById('s-status').textContent = '';
+  renderSeparar();
+});
+
+document.getElementById('s-separar').addEventListener('click', async ()=>{
+  const status = document.getElementById('s-status');
+  if(!separarFile) return;
+  const { PDFDocument } = PDFLib;
+  const prefijo = document.getElementById('s-prefijo').value || 'parte_';
+  const porGrupo = Math.max(1, parseInt(document.getElementById('s-porgrupo').value)||8);
+  const inicio = parseInt(document.getElementById('s-inicio').value)||0;
+  const digitos = parseInt(document.getElementById('s-digitos').value)||2;
+
+  try{
+    status.textContent = 'Leyendo el PDF...';
+    const bytes = await separarFile.arrayBuffer();
+    const sourcePdf = await PDFDocument.load(bytes);
+    const totalPaginas = sourcePdf.getPageCount();
+    const totalGrupos = Math.ceil(totalPaginas / porGrupo);
+    const items = [];
+    let n = inicio;
+
+    for(let i=0;i<totalPaginas;i+=porGrupo){
+      const gi = Math.floor(i/porGrupo)+1;
+      status.textContent = `Generando PDF ${gi} de ${totalGrupos}...`;
+      const indices = [];
+      for(let p=i; p<Math.min(i+porGrupo, totalPaginas); p++) indices.push(p);
+
+      const nuevoPdf = await PDFDocument.create();
+      const paginasCopiadas = await nuevoPdf.copyPages(sourcePdf, indices);
+      paginasCopiadas.forEach(p=>nuevoPdf.addPage(p));
+      const nuevoBytes = await nuevoPdf.save();
+      const blob = new Blob([nuevoBytes], {type:'application/pdf'});
+      const numTxt = String(n).padStart(digitos,'0');
+      items.push({ blob, nombre: `${prefijo}${numTxt}.pdf` });
+      n++;
+    }
+
+    status.textContent = items.length>1 ? `Empaquetando ${items.length} PDFs...` : 'Descargando...';
+    await descargarLote(items, 'separados.zip', status);
+    status.textContent = `Listo, se generaron ${totalGrupos} PDFs a partir de ${totalPaginas} paginas.`;
+  }catch(err){
+    status.textContent = 'Error al separar: ' + ((err && err.message) ? err.message : String(err));
+  }
 });
 </script>
 </body>
