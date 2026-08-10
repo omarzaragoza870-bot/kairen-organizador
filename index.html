@@ -420,8 +420,8 @@
 <script type="module">
   import { heicTo } from "https://esm.sh/heic-to";
   window.heicTo = heicTo;
-  import removeBackground from "https://esm.sh/@imgly/background-removal";
-  window.removeBackground = removeBackground;
+  import * as imglyModule from "https://esm.sh/@imgly/background-removal";
+  window.removeBackground = imglyModule.default || imglyModule.removeBackground || imglyModule;
 </script>
 <script>
 document.querySelectorAll('.tab').forEach(t=>{
