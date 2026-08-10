@@ -95,6 +95,8 @@
   }
   .modeswitch button.active{background:var(--accent-bg);color:#7dabff;border-color:var(--accent);font-weight:600;}
   .hint{font-size:12px;color:var(--text-secondary);margin-bottom:8px;}
+  .progress-wrap{width:100%;height:8px;background:var(--border);border-radius:4px;overflow:hidden;margin-top:10px;display:none;}
+  .progress-fill{height:100%;width:0%;background:var(--gradiente);transition:width .2s ease;}
 </style>
 </head>
 <body>
@@ -171,6 +173,7 @@
         <button class="btn" id="r-limpiar">Limpiar</button>
         <span class="status" id="r-status"></span>
       </div>
+      <div class="progress-wrap" id="r-progress"><div class="progress-fill" id="r-progress-fill"></div></div>
       <p class="foot">El navegador no puede renombrar tus archivos originales directamente, asi que esto descarga copias con el nombre nuevo.</p>
     </div>
   </div>
@@ -211,6 +214,7 @@
         <button class="btn" id="p-limpiar">Limpiar</button>
         <span class="status" id="p-status"></span>
       </div>
+      <div class="progress-wrap" id="p-progress"><div class="progress-fill" id="p-progress-fill"></div></div>
       <p class="foot">El orden inicial es por nombre de archivo; puedes arrastrar para ajustarlo.</p>
     </div>
   </div>
@@ -247,6 +251,7 @@
         <button class="btn" id="h-limpiar">Limpiar</button>
         <span class="status" id="h-status"></span>
       </div>
+      <div class="progress-wrap" id="h-progress"><div class="progress-fill" id="h-progress-fill"></div></div>
       <p class="foot">GIF y TIFF se pueden leer pero no generar (limitacion del navegador); elige JPG, PNG, WEBP o BMP como salida.</p>
     </div>
   </div>
@@ -286,6 +291,7 @@
         <button class="btn" id="c-limpiar">Limpiar</button>
         <span class="status" id="c-status"></span>
       </div>
+      <div class="progress-wrap" id="c-progress"><div class="progress-fill" id="c-progress-fill"></div></div>
       <p class="foot">Baja el peso de tus fotos ajustando calidad y/o ancho maximo. Util antes de subir a Sheets o mandar por WhatsApp.</p>
     </div>
   </div>
@@ -314,6 +320,7 @@
         <button class="btn" id="u-limpiar">Limpiar</button>
         <span class="status" id="u-status"></span>
       </div>
+      <div class="progress-wrap" id="u-progress"><div class="progress-fill" id="u-progress-fill"></div></div>
       <p class="foot">La union pasa por tu navegador; los archivos no se suben a ningun servidor.</p>
     </div>
   </div>
@@ -327,6 +334,7 @@
       </div>
       <input type="file" id="file-aplanar" multiple accept="application/pdf,.pdf">
 
+      <div class="hint">Arrastra los archivos en la lista para cambiar el orden (solo afecta el orden dentro del ZIP).</div>
       <div class="list" id="ap-list"><div class="empty">Todavia no hay PDFs cargados.</div></div>
 
       <div style="margin-top:14px;display:flex;gap:10px;align-items:center;">
@@ -334,6 +342,7 @@
         <button class="btn" id="ap-limpiar">Limpiar</button>
         <span class="status" id="ap-status"></span>
       </div>
+      <div class="progress-wrap" id="ap-progress"><div class="progress-fill" id="ap-progress-fill"></div></div>
       <p class="foot">Convierte los campos de formulario (texto, casillas) en contenido fijo, para que no se pierdan datos al imprimir o reabrir el PDF en otro programa. Si el PDF no tiene un formulario reconocible, se descarga igual sin cambios.</p>
     </div>
   </div>
@@ -373,6 +382,7 @@
         <button class="btn" id="s-limpiar">Limpiar</button>
         <span class="status" id="s-status"></span>
       </div>
+      <div class="progress-wrap" id="s-progress"><div class="progress-fill" id="s-progress-fill"></div></div>
       <p class="foot">Divide un PDF grande en varios PDFs mas pequenos, cada uno con el numero de paginas que definas.</p>
     </div>
   </div>
@@ -393,6 +403,7 @@
         <button class="btn" id="f-limpiar">Limpiar</button>
         <span class="status" id="f-status"></span>
       </div>
+      <div class="progress-wrap" id="f-progress"><div class="progress-fill" id="f-progress-fill"></div></div>
       <p class="foot">La primera vez que uses esta pestana, el navegador descarga un modelo de IA (puede tardar y pesar varias decenas de MB); despues de eso, cada foto se procesa localmente. El resultado siempre es PNG con fondo transparente.</p>
     </div>
   </div>
@@ -589,6 +600,19 @@ function rotateImageCanvas(img, deg){
   return canvas;
 }
 
+function setProgress(prefijo, pct){
+  const wrap = document.getElementById(prefijo+'-progress');
+  const fill = document.getElementById(prefijo+'-progress-fill');
+  if(!wrap || !fill) return;
+  if(pct === null){
+    wrap.style.display = 'none';
+    fill.style.width = '0%';
+    return;
+  }
+  wrap.style.display = 'block';
+  fill.style.width = Math.max(0, Math.min(100, pct)) + '%';
+}
+
 function download(blob, nombre){
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
@@ -600,17 +624,21 @@ function download(blob, nombre){
   URL.revokeObjectURL(url);
 }
 
-async function descargarLote(items, nombreZip, statusEl){
+async function descargarLote(items, nombreZip, statusEl, prefijo){
   if(items.length === 0) return;
   if(items.length === 1){
     download(items[0].blob, items[0].nombre);
+    if(prefijo) setProgress(prefijo, 100);
     return;
   }
   if(statusEl) statusEl.textContent = 'Empaquetando en ZIP...';
   const zip = new JSZip();
   items.forEach(it => zip.file(it.nombre, it.blob));
-  const contenido = await zip.generateAsync({ type: 'blob' });
+  const contenido = await zip.generateAsync({ type: 'blob' }, (meta)=>{
+    if(prefijo) setProgress(prefijo, meta.percent);
+  });
   download(contenido, nombreZip);
+  if(prefijo) setProgress(prefijo, 100);
 }
 
 /* ---------- RENOMBRAR ---------- */
@@ -687,11 +715,13 @@ document.getElementById('r-limpiar').addEventListener('click', ()=>{
 
 document.getElementById('r-descargar').addEventListener('click', async ()=>{
   const status = document.getElementById('r-status');
+  setProgress('r', 0);
   const sorted = [...renameFiles].sort(naturalSort);
   const items = sorted.map(f=>({ blob: f, nombre: f._nuevoNombre }));
   status.textContent = items.length>1 ? `Empaquetando ${items.length} archivos...` : 'Descargando...';
-  await descargarLote(items, 'renombrados.zip', status);
+  await descargarLote(items, 'renombrados.zip', status, 'r');
   status.textContent = `Listo, ${items.length} archivo(s) descargado(s).`;
+  setTimeout(()=>setProgress('r', null), 1200);
 });
 
 /* ---------- UNIR IMAGENES EN PDF ---------- */
@@ -765,6 +795,7 @@ document.getElementById('p-limpiar').addEventListener('click', ()=>{
 
 document.getElementById('p-generar').addEventListener('click', async ()=>{
   const status = document.getElementById('p-status');
+  setProgress('p', 0);
   const { jsPDF } = window.jspdf;
   const prefijo = document.getElementById('p-prefijo').value || 'documento_';
   const porGrupo = Math.max(1, parseInt(document.getElementById('p-porgrupo').value)||8);
@@ -780,6 +811,7 @@ document.getElementById('p-generar').addEventListener('click', async ()=>{
     gi++;
     const grupo = pdfFiles.slice(i, Math.min(i+porGrupo, pdfFiles.length));
     status.textContent = `Generando PDF ${gi} de ${totalGrupos}...`;
+    setProgress('p', ((gi-1)/totalGrupos)*90);
     const pdf = new jsPDF({unit:'pt', format:'a4'});
     const pageW = pdf.internal.pageSize.getWidth();
     const pageH = pdf.internal.pageSize.getHeight();
@@ -813,8 +845,9 @@ document.getElementById('p-generar').addEventListener('click', async ()=>{
   }
 
   status.textContent = items.length>1 ? `Empaquetando ${items.length} PDFs...` : 'Descargando...';
-  await descargarLote(items, 'pdfs.zip', status);
+  await descargarLote(items, 'pdfs.zip', status, 'p');
   status.textContent = `Listo, se generaron ${totalGrupos} PDFs.`;
+  setTimeout(()=>setProgress('p', null), 1200);
 });
 
 /* ---------- CONVERTIR IMAGENES (multi-formato) ---------- */
@@ -852,6 +885,7 @@ document.getElementById('h-limpiar').addEventListener('click', ()=>{
 
 document.getElementById('h-convertir').addEventListener('click', async ()=>{
   const status = document.getElementById('h-status');
+  setProgress('h', 0);
   const formato = document.getElementById('h-formato').value;
   const calidad = (parseInt(document.getElementById('h-calidad').value)||95)/100;
   const extNueva = '.'+formato;
@@ -861,6 +895,7 @@ document.getElementById('h-convertir').addEventListener('click', async ()=>{
   for(let i=0;i<heicFiles.length;i++){
     const f = heicFiles[i];
     status.textContent = `Convirtiendo ${i+1} de ${heicFiles.length}: ${f.name}...`;
+    setProgress('h', (i/heicFiles.length)*90);
     try{
       const canvas = await decodeToCanvas(f);
       const blob = await canvasToBlob(canvas, formato, calidad);
@@ -872,7 +907,7 @@ document.getElementById('h-convertir').addEventListener('click', async ()=>{
   }
 
   status.textContent = items.length>1 ? `Empaquetando ${items.length} archivos...` : 'Descargando...';
-  await descargarLote(items, 'convertidos.zip', status);
+  await descargarLote(items, 'convertidos.zip', status, 'h');
 
   const exitosos = items.length;
   if(fallidos.length===0){
@@ -882,6 +917,7 @@ document.getElementById('h-convertir').addEventListener('click', async ()=>{
       `Detalle del primer error: <code>${fallidos[0].error}</code><br>` +
       fallidos.map(x=>x.nombre).join(', ');
   }
+  setTimeout(()=>setProgress('h', null), 1200);
 });
 
 /* ---------- COMPRIMIR ---------- */
@@ -923,6 +959,7 @@ document.getElementById('c-limpiar').addEventListener('click', ()=>{
 
 document.getElementById('c-comprimir').addEventListener('click', async ()=>{
   const status = document.getElementById('c-status');
+  setProgress('c', 0);
   const anchoMaxRaw = document.getElementById('c-ancho').value;
   const anchoMax = anchoMaxRaw ? parseInt(anchoMaxRaw) : null;
   const calidad = (parseInt(document.getElementById('c-calidad').value)||80)/100;
@@ -934,6 +971,7 @@ document.getElementById('c-comprimir').addEventListener('click', async ()=>{
   for(let i=0;i<compFiles.length;i++){
     const f = compFiles[i];
     status.textContent = `Comprimiendo ${i+1} de ${compFiles.length}: ${f.name}...`;
+    setProgress('c', (i/compFiles.length)*90);
     try{
       let canvas = await decodeToCanvas(f);
       if(anchoMax && canvas.width > anchoMax){
@@ -955,7 +993,7 @@ document.getElementById('c-comprimir').addEventListener('click', async ()=>{
   }
 
   status.textContent = items.length>1 ? `Empaquetando ${items.length} archivos...` : 'Descargando...';
-  await descargarLote(items, 'comprimidos.zip', status);
+  await descargarLote(items, 'comprimidos.zip', status, 'c');
 
   const exitosos = items.length;
   if(fallidos.length===0){
@@ -964,6 +1002,7 @@ document.getElementById('c-comprimir').addEventListener('click', async ()=>{
   } else {
     status.innerHTML = `Comprimidos: ${exitosos}. Fallaron ${fallidos.length}: ` + fallidos.map(x=>x.nombre).join(', ');
   }
+  setTimeout(()=>setProgress('c', null), 1200);
 });
 
 /* ---------- UNIR PDFS EXISTENTES ---------- */
@@ -1001,6 +1040,7 @@ document.getElementById('u-limpiar').addEventListener('click', ()=>{
 
 document.getElementById('u-unir').addEventListener('click', async ()=>{
   const status = document.getElementById('u-status');
+  setProgress('u', 0);
   let nombreSalida = document.getElementById('u-nombre').value || 'unido.pdf';
   if(!/\.pdf$/i.test(nombreSalida)) nombreSalida += '.pdf';
 
@@ -1009,6 +1049,7 @@ document.getElementById('u-unir').addEventListener('click', async ()=>{
     const mergedPdf = await PDFDocument.create();
     for(let i=0;i<pdfMergeFiles.length;i++){
       status.textContent = `Procesando ${i+1} de ${pdfMergeFiles.length}: ${pdfMergeFiles[i].name}...`;
+      setProgress('u', (i/pdfMergeFiles.length)*90);
       const bytes = await pdfMergeFiles[i].arrayBuffer();
       const donorPdf = await PDFDocument.load(bytes);
       const pages = await mergedPdf.copyPages(donorPdf, donorPdf.getPageIndices());
@@ -1017,10 +1058,12 @@ document.getElementById('u-unir').addEventListener('click', async ()=>{
     const mergedBytes = await mergedPdf.save();
     const blob = new Blob([mergedBytes], {type:'application/pdf'});
     download(blob, nombreSalida);
+    setProgress('u', 100);
     status.textContent = 'Listo! PDF combinado descargado.';
   }catch(err){
     status.textContent = 'Error al unir: ' + ((err && err.message) ? err.message : String(err));
   }
+  setTimeout(()=>setProgress('u', null), 1200);
 });
 
 /* ---------- APLANAR PDF ---------- */
@@ -1035,11 +1078,12 @@ function renderAplanar(){
     return;
   }
   let html='';
-  aplanarFiles.forEach(f=>{
-    html += `<div class="item"><span class="old">${f.name}</span></div>`;
+  aplanarFiles.forEach((f,i)=>{
+    html += `<div class="item" data-idx="${i}" style="cursor:grab;"><span style="color:var(--text-secondary);font-size:12px;min-width:18px;">${i+1}.</span><span class="old">${f.name}</span></div>`;
   });
   list.innerHTML = html;
   btn.disabled = false;
+  enableDragReorder(list, aplanarFiles, renderAplanar);
 }
 
 setupDrop('drop-aplanar','file-aplanar', files=>{
@@ -1057,6 +1101,7 @@ document.getElementById('ap-limpiar').addEventListener('click', ()=>{
 
 document.getElementById('ap-aplanar').addEventListener('click', async ()=>{
   const status = document.getElementById('ap-status');
+  setProgress('ap', 0);
   const { PDFDocument } = PDFLib;
   const items = [];
   const fallidos = [];
@@ -1065,6 +1110,7 @@ document.getElementById('ap-aplanar').addEventListener('click', async ()=>{
   for(let i=0;i<aplanarFiles.length;i++){
     const f = aplanarFiles[i];
     status.textContent = `Aplanando ${i+1} de ${aplanarFiles.length}: ${f.name}...`;
+    setProgress('ap', (i/aplanarFiles.length)*90);
     try{
       const bytes = await f.arrayBuffer();
       const pdfDoc = await PDFDocument.load(bytes);
@@ -1089,12 +1135,13 @@ document.getElementById('ap-aplanar').addEventListener('click', async ()=>{
   }
 
   status.textContent = items.length>1 ? `Empaquetando ${items.length} archivos...` : 'Descargando...';
-  await descargarLote(items, 'aplanados.zip', status);
+  await descargarLote(items, 'aplanados.zip', status, 'ap');
 
   let mensaje = `Listo, ${items.length} archivo(s) procesado(s).`;
   if(sinFormulario>0) mensaje += ` (${sinFormulario} no tenian campos de formulario, se descargaron sin cambios).`;
   if(fallidos.length>0) mensaje += ` Fallaron ${fallidos.length}: ` + fallidos.map(x=>x.nombre).join(', ');
   status.textContent = mensaje;
+  setTimeout(()=>setProgress('ap', null), 1200);
 });
 
 /* ---------- SEPARAR PDF ---------- */
@@ -1128,6 +1175,7 @@ document.getElementById('s-limpiar').addEventListener('click', ()=>{
 document.getElementById('s-separar').addEventListener('click', async ()=>{
   const status = document.getElementById('s-status');
   if(!separarFile) return;
+  setProgress('s', 0);
   const { PDFDocument } = PDFLib;
   const prefijo = document.getElementById('s-prefijo').value || 'parte_';
   const porGrupo = Math.max(1, parseInt(document.getElementById('s-porgrupo').value)||8);
@@ -1146,6 +1194,7 @@ document.getElementById('s-separar').addEventListener('click', async ()=>{
     for(let i=0;i<totalPaginas;i+=porGrupo){
       const gi = Math.floor(i/porGrupo)+1;
       status.textContent = `Generando PDF ${gi} de ${totalGrupos}...`;
+      setProgress('s', ((gi-1)/totalGrupos)*90);
       const indices = [];
       for(let p=i; p<Math.min(i+porGrupo, totalPaginas); p++) indices.push(p);
 
@@ -1160,11 +1209,12 @@ document.getElementById('s-separar').addEventListener('click', async ()=>{
     }
 
     status.textContent = items.length>1 ? `Empaquetando ${items.length} PDFs...` : 'Descargando...';
-    await descargarLote(items, 'separados.zip', status);
+    await descargarLote(items, 'separados.zip', status, 's');
     status.textContent = `Listo, se generaron ${totalGrupos} PDFs a partir de ${totalPaginas} paginas.`;
   }catch(err){
     status.textContent = 'Error al separar: ' + ((err && err.message) ? err.message : String(err));
   }
+  setTimeout(()=>setProgress('s', null), 1200);
 });
 
 /* ---------- QUITAR FONDO ---------- */
@@ -1203,9 +1253,11 @@ document.getElementById('f-limpiar').addEventListener('click', ()=>{
 
 document.getElementById('f-quitar').addEventListener('click', async ()=>{
   const status = document.getElementById('f-status');
+  setProgress('f', 0);
 
   if (typeof window.removeBackground !== 'function'){
     status.textContent = 'La libreria todavia esta cargando, espera unos segundos e intenta de nuevo.';
+    setProgress('f', null);
     return;
   }
 
@@ -1214,11 +1266,17 @@ document.getElementById('f-quitar').addEventListener('click', async ()=>{
 
   for(let i=0;i<fondoFiles.length;i++){
     const f = fondoFiles[i];
+    const baseProgress = (i/fondoFiles.length)*90;
     status.textContent = `Procesando ${i+1} de ${fondoFiles.length}: ${f.name} (la primera vez descarga el modelo de IA, puede tardar)...`;
+    setProgress('f', baseProgress);
     try{
       const blob = await window.removeBackground(f, {
         progress: (key, current, total) => {
           status.textContent = `${f.name}: ${key} (${current}/${total})`;
+          if(total>0){
+            const pasoActual = baseProgress + (current/total)*(90/fondoFiles.length);
+            setProgress('f', pasoActual);
+          }
         }
       });
       const nombreNuevo = f.name.replace(/\.[^.]+$/, '') + '_sinfondo.png';
@@ -1229,7 +1287,7 @@ document.getElementById('f-quitar').addEventListener('click', async ()=>{
   }
 
   status.textContent = items.length>1 ? `Empaquetando ${items.length} archivos...` : 'Descargando...';
-  await descargarLote(items, 'sin_fondo.zip', status);
+  await descargarLote(items, 'sin_fondo.zip', status, 'f');
 
   const exitosos = items.length;
   if(fallidos.length===0){
@@ -1237,6 +1295,7 @@ document.getElementById('f-quitar').addEventListener('click', async ()=>{
   } else {
     status.innerHTML = `Procesadas: ${exitosos}. Fallaron ${fallidos.length}: ` + fallidos.map(x=>x.nombre).join(', ');
   }
+  setTimeout(()=>setProgress('f', null), 1200);
 });
 </script>
 </body>
