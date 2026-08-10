@@ -113,6 +113,7 @@
     <button class="tab" data-tab="unirpdf">Unir PDFs</button>
     <button class="tab" data-tab="aplanar">Aplanar PDF</button>
     <button class="tab" data-tab="separar">Separar PDF</button>
+    <button class="tab" data-tab="fondo">Quitar fondo</button>
   </div>
 
   <!-- RENOMBRAR -->
@@ -376,6 +377,26 @@
     </div>
   </div>
 
+  <!-- QUITAR FONDO -->
+  <div class="panel" id="panel-fondo">
+    <div class="card">
+      <div class="drop" id="drop-fondo">
+        <div><strong>Arrastra tus fotos aqui</strong></div>
+        <div>o haz click para seleccionarlas</div>
+      </div>
+      <input type="file" id="file-fondo" multiple accept="image/*">
+
+      <div class="list" id="f-list"><div class="empty">Todavia no hay archivos cargados.</div></div>
+
+      <div style="margin-top:14px;display:flex;gap:10px;align-items:center;">
+        <button class="btn primary" id="f-quitar" disabled>Quitar fondo y descargar</button>
+        <button class="btn" id="f-limpiar">Limpiar</button>
+        <span class="status" id="f-status"></span>
+      </div>
+      <p class="foot">La primera vez que uses esta pestana, el navegador descarga un modelo de IA (puede tardar y pesar varias decenas de MB); despues de eso, cada foto se procesa localmente. El resultado siempre es PNG con fondo transparente.</p>
+    </div>
+  </div>
+
   <div style="text-align:center;margin-top:24px;padding-top:16px;border-top:1px solid var(--border);color:var(--text-secondary);font-size:12px;">
     &copy; 2026 KAIREN &middot; Creado por Isai Zaragoza &middot; Todos los derechos reservados
   </div>
@@ -388,6 +409,8 @@
 <script type="module">
   import { heicTo } from "https://esm.sh/heic-to";
   window.heicTo = heicTo;
+  import removeBackground from "https://esm.sh/@imgly/background-removal";
+  window.removeBackground = removeBackground;
 </script>
 <script>
 document.querySelectorAll('.tab').forEach(t=>{
@@ -417,7 +440,10 @@ function setupDrop(dropId, inputId, onFiles){
   const drop = document.getElementById(dropId);
   const input = document.getElementById(inputId);
   drop.addEventListener('click', ()=>input.click());
-  input.addEventListener('change', e=>onFiles(Array.from(e.target.files)));
+  input.addEventListener('change', e=>{
+    onFiles(Array.from(e.target.files));
+    input.value = '';
+  });
   ['dragenter','dragover'].forEach(ev=>drop.addEventListener(ev,e=>{e.preventDefault();drop.classList.add('drag');}));
   ['dragleave','drop'].forEach(ev=>drop.addEventListener(ev,e=>{e.preventDefault();drop.classList.remove('drag');}));
   drop.addEventListener('drop', e=>{
@@ -643,7 +669,7 @@ function renderRename(){
 
 setupDrop('drop-rename','file-rename', files=>{
   files.forEach(f=>{ if(f.type && f.type.startsWith('image/')) f._url = URL.createObjectURL(f); });
-  renameFiles = files;
+  renameFiles = renameFiles.concat(files);
   renderRename();
 });
 
@@ -721,7 +747,7 @@ setupDrop('drop-pdf','file-pdf', files=>{
   const imgs = files.filter(f=>f.type && f.type.startsWith('image/'));
   imgs.forEach(f=>{ f._url = URL.createObjectURL(f); f._rot = 0; });
   imgs.sort(naturalSort);
-  pdfFiles = imgs;
+  pdfFiles = pdfFiles.concat(imgs);
   renderPdfGroups();
 });
 
@@ -813,7 +839,7 @@ function renderHeic(){
 
 setupDrop('drop-heic','file-heic', files=>{
   const validas = ['png','jpg','jpeg','gif','bmp','tif','tiff','heic','heif','webp'];
-  heicFiles = files.filter(f=> validas.includes(extLower(f.name)));
+  heicFiles = heicFiles.concat(files.filter(f=> validas.includes(extLower(f.name))));
   renderHeic();
 });
 
@@ -884,7 +910,7 @@ function renderComp(){
 }
 
 setupDrop('drop-comp','file-comp', files=>{
-  compFiles = files;
+  compFiles = compFiles.concat(files);
   renderComp();
 });
 
@@ -961,7 +987,8 @@ function renderUnirList(){
 }
 
 setupDrop('drop-unirpdf','file-unirpdf', files=>{
-  pdfMergeFiles = files.filter(f=> f.type==='application/pdf' || /\.pdf$/i.test(f.name));
+  const nuevos = files.filter(f=> f.type==='application/pdf' || /\.pdf$/i.test(f.name));
+  pdfMergeFiles = pdfMergeFiles.concat(nuevos);
   renderUnirList();
 });
 
@@ -1016,7 +1043,8 @@ function renderAplanar(){
 }
 
 setupDrop('drop-aplanar','file-aplanar', files=>{
-  aplanarFiles = files.filter(f=> f.type==='application/pdf' || /\.pdf$/i.test(f.name));
+  const nuevos = files.filter(f=> f.type==='application/pdf' || /\.pdf$/i.test(f.name));
+  aplanarFiles = aplanarFiles.concat(nuevos);
   renderAplanar();
 });
 
@@ -1136,6 +1164,78 @@ document.getElementById('s-separar').addEventListener('click', async ()=>{
     status.textContent = `Listo, se generaron ${totalGrupos} PDFs a partir de ${totalPaginas} paginas.`;
   }catch(err){
     status.textContent = 'Error al separar: ' + ((err && err.message) ? err.message : String(err));
+  }
+});
+
+/* ---------- QUITAR FONDO ---------- */
+let fondoFiles = [];
+
+function renderFondo(){
+  const list = document.getElementById('f-list');
+  const btn = document.getElementById('f-quitar');
+  if(fondoFiles.length===0){
+    list.innerHTML = '<div class="empty">Todavia no hay archivos cargados.</div>';
+    btn.disabled = true;
+    return;
+  }
+  let html='';
+  fondoFiles.forEach(f=>{
+    html += `<div class="item">${f._url?`<img src="${f._url}">`:''}<span class="old">${f.name}</span></div>`;
+  });
+  list.innerHTML = html;
+  btn.disabled = false;
+}
+
+setupDrop('drop-fondo','file-fondo', files=>{
+  const nuevos = files.filter(f=> f.type && f.type.startsWith('image/'));
+  nuevos.forEach(f=>{ f._url = URL.createObjectURL(f); });
+  fondoFiles = fondoFiles.concat(nuevos);
+  renderFondo();
+});
+
+document.getElementById('f-limpiar').addEventListener('click', ()=>{
+  fondoFiles.forEach(f=>{ if(f._url) URL.revokeObjectURL(f._url); });
+  fondoFiles = [];
+  document.getElementById('file-fondo').value = '';
+  document.getElementById('f-status').textContent = '';
+  renderFondo();
+});
+
+document.getElementById('f-quitar').addEventListener('click', async ()=>{
+  const status = document.getElementById('f-status');
+
+  if (typeof window.removeBackground !== 'function'){
+    status.textContent = 'La libreria todavia esta cargando, espera unos segundos e intenta de nuevo.';
+    return;
+  }
+
+  const items = [];
+  const fallidos = [];
+
+  for(let i=0;i<fondoFiles.length;i++){
+    const f = fondoFiles[i];
+    status.textContent = `Procesando ${i+1} de ${fondoFiles.length}: ${f.name} (la primera vez descarga el modelo de IA, puede tardar)...`;
+    try{
+      const blob = await window.removeBackground(f, {
+        progress: (key, current, total) => {
+          status.textContent = `${f.name}: ${key} (${current}/${total})`;
+        }
+      });
+      const nombreNuevo = f.name.replace(/\.[^.]+$/, '') + '_sinfondo.png';
+      items.push({ blob, nombre: nombreNuevo });
+    }catch(err){
+      fallidos.push({ nombre: f.name, error: (err && err.message) ? err.message : String(err) });
+    }
+  }
+
+  status.textContent = items.length>1 ? `Empaquetando ${items.length} archivos...` : 'Descargando...';
+  await descargarLote(items, 'sin_fondo.zip', status);
+
+  const exitosos = items.length;
+  if(fallidos.length===0){
+    status.textContent = `Listo, ${exitosos} imagen(es) procesada(s).`;
+  } else {
+    status.innerHTML = `Procesadas: ${exitosos}. Fallaron ${fallidos.length}: ` + fallidos.map(x=>x.nombre).join(', ');
   }
 });
 </script>
