@@ -1513,6 +1513,21 @@ function ordenarPuntosDocumento(pts){
   return { tl, tr, br, bl };
 }
 
+function puntosDeRectanguloRotado(rect){
+  const anguloRad = rect.angle * Math.PI / 180;
+  const cos = Math.cos(anguloRad);
+  const sin = Math.sin(anguloRad);
+  const w = rect.size.width / 2;
+  const h = rect.size.height / 2;
+  const cx = rect.center.x;
+  const cy = rect.center.y;
+  const esquinasLocales = [ {x:-w,y:-h}, {x:w,y:-h}, {x:w,y:h}, {x:-w,y:h} ];
+  return esquinasLocales.map(p => ({
+    x: cx + p.x*cos - p.y*sin,
+    y: cy + p.x*sin + p.y*cos
+  }));
+}
+
 async function detectarYEnderezarDocumento(file){
   const { img, url } = await blobToImageEl(file);
   const src = cv.imread(img);
@@ -1524,7 +1539,6 @@ async function detectarYEnderezarDocumento(file){
   const kernel = cv.Mat.ones(3, 3, cv.CV_8U);
   const contours = new cv.MatVector();
   const hierarchy = new cv.Mat();
-  let mejorContorno = null;
   let resultado = null;
 
   try{
@@ -1536,30 +1550,41 @@ async function detectarYEnderezarDocumento(file){
 
     const areaImagen = src.cols * src.rows;
     let mejorArea = 0;
+    let mejorPuntos = null;
 
     for(let i=0; i<contours.size(); i++){
       const cnt = contours.get(i);
       const area = cv.contourArea(cnt);
-      if(area < areaImagen * 0.15){ cnt.delete(); continue; }
+      if(area < areaImagen * 0.08){ cnt.delete(); continue; }
+
+      let puntosCandidatos = null;
+
+      // Intento 1: forma con exactamente 4 esquinas (documentos con esquinas rectas)
       const peri = cv.arcLength(cnt, true);
       const approx = new cv.Mat();
       cv.approxPolyDP(cnt, approx, 0.02*peri, true);
-      if(approx.rows === 4 && area > mejorArea){
-        if(mejorContorno) mejorContorno.delete();
-        mejorContorno = approx;
+      if(approx.rows === 4){
+        const pts = [];
+        for(let k=0;k<4;k++) pts.push({ x: approx.data32S[k*2], y: approx.data32S[k*2+1] });
+        puntosCandidatos = pts;
+      }
+      approx.delete();
+
+      // Intento 2 (respaldo): rectangulo de area minima, tolera esquinas redondeadas
+      if(!puntosCandidatos){
+        const rect = cv.minAreaRect(cnt);
+        puntosCandidatos = puntosDeRectanguloRotado(rect);
+      }
+
+      if(puntosCandidatos && area > mejorArea){
         mejorArea = area;
-      } else {
-        approx.delete();
+        mejorPuntos = puntosCandidatos;
       }
       cnt.delete();
     }
 
-    if(mejorContorno){
-      const pts = [];
-      for(let i=0;i<4;i++){
-        pts.push({ x: mejorContorno.data32S[i*2], y: mejorContorno.data32S[i*2+1] });
-      }
-      const { tl, tr, br, bl } = ordenarPuntosDocumento(pts);
+    if(mejorPuntos){
+      const { tl, tr, br, bl } = ordenarPuntosDocumento(mejorPuntos);
 
       const anchoA = Math.hypot(br.x-bl.x, br.y-bl.y);
       const anchoB = Math.hypot(tr.x-tl.x, tr.y-tl.y);
@@ -1586,7 +1611,6 @@ async function detectarYEnderezarDocumento(file){
   } finally {
     src.delete(); gray.delete(); blurred.delete(); edged.delete(); kernel.delete();
     contours.delete(); hierarchy.delete();
-    if(mejorContorno) mejorContorno.delete();
   }
 
   return resultado;
