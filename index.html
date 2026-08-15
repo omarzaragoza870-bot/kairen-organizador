@@ -97,6 +97,8 @@
   .hint{font-size:12px;color:var(--text-secondary);margin-bottom:8px;}
   .progress-wrap{width:100%;height:8px;background:var(--border);border-radius:4px;overflow:hidden;margin-top:10px;display:none;}
   .progress-fill{height:100%;width:0%;background:var(--gradiente);transition:width .2s ease;}
+  .mini-progress-wrap{width:70px;height:6px;background:var(--border);border-radius:3px;overflow:hidden;flex-shrink:0;}
+  .mini-progress-fill{height:100%;background:var(--gradiente);width:0%;transition:width .2s ease;}
 </style>
 </head>
 <body>
@@ -397,6 +399,14 @@
       <input type="file" id="file-fondo" multiple accept="image/*">
 
       <div class="row">
+        <div class="field">
+          <label>Calidad del modelo</label>
+          <select id="f-calidad-modelo">
+            <option value="small">Rapida (small)</option>
+            <option value="medium" selected>Media (medium)</option>
+            <option value="large">Maxima precision (large, mas lenta)</option>
+          </select>
+        </div>
         <div class="field" style="display:flex;align-items:center;gap:8px;flex:2;">
           <input type="checkbox" id="f-recortar" checked style="width:auto;">
           <label style="margin:0;" for="f-recortar">Recortar automaticamente el espacio transparente sobrante</label>
@@ -415,7 +425,7 @@
         <span class="status" id="f-status"></span>
       </div>
       <div class="progress-wrap" id="f-progress"><div class="progress-fill" id="f-progress-fill"></div></div>
-      <p class="foot">La primera vez que uses esta pestana, el navegador descarga un modelo de IA (puede tardar y pesar varias decenas de MB); despues de eso, cada foto se procesa localmente. El resultado siempre es PNG con fondo transparente. Con el recorte activado, tambien se elimina el espacio transparente sobrante (ej. cuando fotografiaste una credencial sobre una hoja carta), dejando el archivo del tamano real del objeto detectado.</p>
+      <p class="foot">La primera vez que uses esta pestana, el navegador descarga un modelo de IA (puede tardar y pesar varias decenas de MB); despues de eso, cada foto se procesa localmente. El resultado siempre es PNG con fondo transparente. Con el recorte activado, tambien se elimina el espacio transparente sobrante. Aviso: esta funcion esta pensada para aislar objetos/personas, no documentos completos — en documentos con codigos de barras, folios o texto en los bordes, el modelo puede confundirlos con "fondo" y eliminarlos; "large" reduce ese riesgo pero no lo garantiza al 100%. Para documentos que deben conservar todos sus elementos, mejor usa las demas pestanas sin pasar por esta.</p>
     </div>
   </div>
 
@@ -1294,6 +1304,14 @@ document.getElementById('s-separar').addEventListener('click', async ()=>{
 /* ---------- QUITAR FONDO ---------- */
 let fondoFiles = [];
 
+const ETIQUETAS_ESTADO_FONDO = {
+  pendiente: { texto: 'Pendiente', color: 'var(--text-secondary)' },
+  procesando: { texto: 'Procesando...', color: '#7dabff' },
+  recortando: { texto: 'Recortando...', color: '#7dabff' },
+  listo: { texto: 'Listo', color: '#22c55e' },
+  error: { texto: 'Error', color: 'var(--danger)' }
+};
+
 function renderFondo(){
   const list = document.getElementById('f-list');
   const btn = document.getElementById('f-quitar');
@@ -1304,7 +1322,9 @@ function renderFondo(){
   }
   let html='';
   fondoFiles.forEach(f=>{
-    html += `<div class="item">${f._url?`<img src="${f._url}">`:''}<span class="old">${f.name}</span></div>`;
+    const estado = ETIQUETAS_ESTADO_FONDO[f._estado || 'pendiente'];
+    const pct = f._pct || 0;
+    html += `<div class="item">${f._url?`<img src="${f._url}">`:''}<span class="old">${f.name}</span><div class="mini-progress-wrap"><div class="mini-progress-fill" style="width:${pct}%;"></div></div><span style="font-size:12px;font-weight:600;color:${estado.color};white-space:nowrap;">${estado.texto}</span></div>`;
   });
   list.innerHTML = html;
   btn.disabled = false;
@@ -1312,7 +1332,7 @@ function renderFondo(){
 
 setupDrop('drop-fondo','file-fondo', files=>{
   const nuevos = files.filter(f=> f.type && f.type.startsWith('image/'));
-  nuevos.forEach(f=>{ f._url = URL.createObjectURL(f); });
+  nuevos.forEach(f=>{ f._url = URL.createObjectURL(f); f._estado = 'pendiente'; });
   fondoFiles = fondoFiles.concat(nuevos);
   renderFondo();
 });
@@ -1339,31 +1359,48 @@ document.getElementById('f-quitar').addEventListener('click', async ()=>{
   const fallidos = [];
   const recortarActivo = document.getElementById('f-recortar').checked;
   const padding = parseInt(document.getElementById('f-padding').value) || 0;
+  const modeloCalidad = document.getElementById('f-calidad-modelo').value;
+
+  fondoFiles.forEach(f=>{ f._estado = 'pendiente'; f._pct = 0; });
+  renderFondo();
 
   for(let i=0;i<fondoFiles.length;i++){
     const f = fondoFiles[i];
     const baseProgress = (i/fondoFiles.length)*90;
+    f._estado = 'procesando';
+    f._pct = 0;
+    renderFondo();
     status.textContent = `Procesando ${i+1} de ${fondoFiles.length}: ${f.name} (la primera vez descarga el modelo de IA, puede tardar)...`;
     setProgress('f', baseProgress);
     try{
       let blob = await window.removeBackground(f, {
+        model: modeloCalidad,
         progress: (key, current, total) => {
           status.textContent = `${f.name}: ${key} (${current}/${total})`;
           if(total>0){
             const pasoActual = baseProgress + (current/total)*(80/fondoFiles.length);
             setProgress('f', pasoActual);
+            f._pct = recortarActivo ? Math.round((current/total)*80) : Math.round((current/total)*100);
+            renderFondo();
           }
         }
       });
       if(recortarActivo){
+        f._estado = 'recortando';
+        f._pct = 85;
+        renderFondo();
         status.textContent = `Recortando espacio transparente: ${f.name}...`;
         blob = await trimTransparentPixels(blob, { alphaThreshold: 10, padding });
       }
       const nombreNuevo = f.name.replace(/\.[^.]+$/, '') + '_sinfondo.png';
       items.push({ blob, nombre: nombreNuevo });
+      f._estado = 'listo';
+      f._pct = 100;
     }catch(err){
       fallidos.push({ nombre: f.name, error: (err && err.message) ? err.message : String(err) });
+      f._estado = 'error';
     }
+    renderFondo();
   }
 
   status.textContent = items.length>1 ? `Empaquetando ${items.length} archivos...` : 'Descargando...';
