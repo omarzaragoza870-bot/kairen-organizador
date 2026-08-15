@@ -396,6 +396,17 @@
       </div>
       <input type="file" id="file-fondo" multiple accept="image/*">
 
+      <div class="row">
+        <div class="field" style="display:flex;align-items:center;gap:8px;flex:2;">
+          <input type="checkbox" id="f-recortar" checked style="width:auto;">
+          <label style="margin:0;" for="f-recortar">Recortar automaticamente el espacio transparente sobrante</label>
+        </div>
+        <div class="field">
+          <label>Margen (px)</label>
+          <input type="number" id="f-padding" value="5" min="0" max="100">
+        </div>
+      </div>
+
       <div class="list" id="f-list"><div class="empty">Todavia no hay archivos cargados.</div></div>
 
       <div style="margin-top:14px;display:flex;gap:10px;align-items:center;">
@@ -404,7 +415,7 @@
         <span class="status" id="f-status"></span>
       </div>
       <div class="progress-wrap" id="f-progress"><div class="progress-fill" id="f-progress-fill"></div></div>
-      <p class="foot">La primera vez que uses esta pestana, el navegador descarga un modelo de IA (puede tardar y pesar varias decenas de MB); despues de eso, cada foto se procesa localmente. El resultado siempre es PNG con fondo transparente.</p>
+      <p class="foot">La primera vez que uses esta pestana, el navegador descarga un modelo de IA (puede tardar y pesar varias decenas de MB); despues de eso, cada foto se procesa localmente. El resultado siempre es PNG con fondo transparente. Con el recorte activado, tambien se elimina el espacio transparente sobrante (ej. cuando fotografiaste una credencial sobre una hoja carta), dejando el archivo del tamano real del objeto detectado.</p>
     </div>
   </div>
 
@@ -581,6 +592,69 @@ function canvasToBlob(canvas, formato, calidad){
   }
   const mime = {jpg:'image/jpeg', png:'image/png', webp:'image/webp'}[formato];
   return new Promise(resolve=>canvas.toBlob(resolve, mime, calidad));
+}
+
+function blobToImageEl(blob){
+  return new Promise((resolve,reject)=>{
+    const url = URL.createObjectURL(blob);
+    const img = new Image();
+    img.onload = ()=>{ resolve({img, url}); };
+    img.onerror = (e)=>{ URL.revokeObjectURL(url); reject(new Error('No se pudo leer la imagen para recortar')); };
+    img.src = url;
+  });
+}
+
+async function trimTransparentPixels(imageBlob, options = {}){
+  const alphaThreshold = options.alphaThreshold ?? 10;
+  const padding = options.padding ?? 5;
+
+  const { img, url } = await blobToImageEl(imageBlob);
+  const width = img.naturalWidth;
+  const height = img.naturalHeight;
+
+  const canvas = document.createElement('canvas');
+  canvas.width = width;
+  canvas.height = height;
+  const ctx = canvas.getContext('2d', { willReadFrequently: true });
+  ctx.drawImage(img, 0, 0);
+  URL.revokeObjectURL(url);
+
+  const { data } = ctx.getImageData(0, 0, width, height);
+
+  let minX = width, minY = height, maxX = -1, maxY = -1;
+  for(let y=0; y<height; y++){
+    const filaBase = y*width*4;
+    for(let x=0; x<width; x++){
+      const alpha = data[filaBase + x*4 + 3];
+      if(alpha > alphaThreshold){
+        if(x < minX) minX = x;
+        if(x > maxX) maxX = x;
+        if(y < minY) minY = y;
+        if(y > maxY) maxY = y;
+      }
+    }
+  }
+
+  // Si no se detecto ningun pixel visible (todo transparente), devolver el original sin cambios
+  if(maxX < minX || maxY < minY){
+    return imageBlob;
+  }
+
+  minX = Math.max(0, minX - padding);
+  minY = Math.max(0, minY - padding);
+  maxX = Math.min(width - 1, maxX + padding);
+  maxY = Math.min(height - 1, maxY + padding);
+
+  const cropW = maxX - minX + 1;
+  const cropH = maxY - minY + 1;
+
+  const outCanvas = document.createElement('canvas');
+  outCanvas.width = cropW;
+  outCanvas.height = cropH;
+  const outCtx = outCanvas.getContext('2d');
+  outCtx.drawImage(canvas, minX, minY, cropW, cropH, 0, 0, cropW, cropH);
+
+  return new Promise(resolve => outCanvas.toBlob(resolve, 'image/png'));
 }
 
 function rotateImageCanvas(img, deg){
@@ -1263,6 +1337,8 @@ document.getElementById('f-quitar').addEventListener('click', async ()=>{
 
   const items = [];
   const fallidos = [];
+  const recortarActivo = document.getElementById('f-recortar').checked;
+  const padding = parseInt(document.getElementById('f-padding').value) || 0;
 
   for(let i=0;i<fondoFiles.length;i++){
     const f = fondoFiles[i];
@@ -1270,15 +1346,19 @@ document.getElementById('f-quitar').addEventListener('click', async ()=>{
     status.textContent = `Procesando ${i+1} de ${fondoFiles.length}: ${f.name} (la primera vez descarga el modelo de IA, puede tardar)...`;
     setProgress('f', baseProgress);
     try{
-      const blob = await window.removeBackground(f, {
+      let blob = await window.removeBackground(f, {
         progress: (key, current, total) => {
           status.textContent = `${f.name}: ${key} (${current}/${total})`;
           if(total>0){
-            const pasoActual = baseProgress + (current/total)*(90/fondoFiles.length);
+            const pasoActual = baseProgress + (current/total)*(80/fondoFiles.length);
             setProgress('f', pasoActual);
           }
         }
       });
+      if(recortarActivo){
+        status.textContent = `Recortando espacio transparente: ${f.name}...`;
+        blob = await trimTransparentPixels(blob, { alphaThreshold: 10, padding });
+      }
       const nombreNuevo = f.name.replace(/\.[^.]+$/, '') + '_sinfondo.png';
       items.push({ blob, nombre: nombreNuevo });
     }catch(err){
