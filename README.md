@@ -2,6 +2,8 @@
 
 Aplicación web para organizar, convertir y preparar imágenes y documentos PDF directamente desde el navegador.
 
+La interfaz utiliza un estilo claro inspirado en iOS: superficies blancas, fondo gris suave, controles redondeados y azul como color principal.
+
 ## Herramientas incluidas
 
 - Renombrar archivos de forma secuencial o mediante búsqueda y reemplazo.

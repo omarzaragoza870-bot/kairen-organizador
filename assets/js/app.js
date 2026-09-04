@@ -1053,9 +1053,9 @@ let fondoFiles = [];
 
 const ETIQUETAS_ESTADO_FONDO = {
   pendiente: { texto: 'Pendiente', color: 'var(--text-secondary)' },
-  procesando: { texto: 'Procesando...', color: '#7dabff' },
-  recortando: { texto: 'Recortando...', color: '#7dabff' },
-  listo: { texto: 'Listo', color: '#22c55e' },
+  procesando: { texto: 'Procesando...', color: '#007aff' },
+  recortando: { texto: 'Recortando...', color: '#007aff' },
+  listo: { texto: 'Listo', color: '#248a3d' },
   error: { texto: 'Error', color: 'var(--danger)' }
 };
 
@@ -1190,9 +1190,9 @@ const _cvCheckInterval = setInterval(()=>{
 
 const ETIQUETAS_ESTADO_ESCANEAR = {
   pendiente: { texto: 'Pendiente', color: 'var(--text-secondary)' },
-  procesando: { texto: 'Detectando bordes...', color: '#7dabff' },
-  listo: { texto: 'Escaneado', color: '#22c55e' },
-  sinbordes: { texto: 'Sin bordes detectados (original)', color: '#fbbf24' },
+  procesando: { texto: 'Detectando bordes...', color: '#007aff' },
+  listo: { texto: 'Escaneado', color: '#248a3d' },
+  sinbordes: { texto: 'Sin bordes detectados (original)', color: '#c93400' },
   error: { texto: 'Error', color: 'var(--danger)' }
 };
 
